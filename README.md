@@ -21,4 +21,68 @@ webpack和Lint等很多的工具和库的核心都是通过Abstract Syntax Tree�
 
     在计算机科学中，抽象语法树（abstract syntax tree或者缩写为AST），或者语法树（syntax tree），是源代码的抽象语法结构的树状表现形式，这里特指编程语言的源代码。
     Javascript的语法是为了给开发者更好的编程而设计的，但是不适合程序的理解。所以需要转化为AST来更适合程序分析，浏览器编译器一般会把源码转化为AST来进行进一步的分析等其他操作。
-    
+![image](https://github.com/tianyuexian/webpack-ast/blob/master/ast.jpg)
+# 4.JavaScript Parser
+    JavaScript Parser，把js源码转化为抽象语法树的解析器。
+    浏览器会把js源码通过解析器转为抽象语法树，再进一步转化为字节码或直接生成机器码。
+    一般来说每个js引擎都会有自己的抽象语法树格式，Chrome的v8引擎，firefox的SpiderMonkey引擎等等，MDN提供了详细SpiderMonkey AST format的详细说明，算是业界的标准。
+## 4.1 常用的JavaScript Parser有：
+esprima traceur acorn shift
+# 4.2 esprima
+    通过 esprima 把源码转化为AST
+    通过 estraverse 遍历并更新AST
+    通过 escodegen 将AST重新生成源码
+    astexplorer
+```
+cnpm i esprima estraverse escodegen- S
+```
+```
+let esprima = require('esprima');
+var estraverse = require('estraverse');
+var escodegen = require("escodegen");
+let code = 'function ast(){}';
+let ast=esprima.parse(code);
+let indent=0;
+function pad() {
+    return ' '.repeat(indent);
+}
+estraverse.traverse(ast,{
+    enter(node) {
+        console.log(pad()+node.type);
+        if(node.type == 'FunctionDeclaration'){
+            node.id.name = 'ast_rename';
+        }
+        indent+=2;
+     },
+    leave(node) {
+        indent-=2;
+        console.log(pad()+node.type);
+
+     }
+ });
+let generated = escodegen.generate(ast);
+console.log(generated);
+```
+```
+Program
+  FunctionDeclaration
+    Identifier
+    Identifier
+    BlockStatement
+    BlockStatement
+  FunctionDeclaration
+Program
+```
+# 5. 转换箭头函数
+    访问者模式Visitor 对于某个对象或者一组对象，不同的访问者，产生的结果不同，执行操作也不同
+    @babel/core
+    babel-types
+    babel-types-api
+    Babel 插件手册
+    babeljs.io
+    babel-plugin-transform-es2015-arrow-functions
+转换前
+```
+const sum = (a,b)=>a+b
+```
+
