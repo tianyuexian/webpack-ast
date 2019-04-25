@@ -85,4 +85,228 @@ Program
 ```
 const sum = (a,b)=>a+b
 ```
+![image](https://github.com/tianyuexian/webpack-ast/blob/master/arrow-left.png)
+转换后
+```
+var sum = function sum(a, b) {
+  return a + b;
+};
+```
+![image](https://github.com/tianyuexian/webpack-ast/blob/master/arrow-right.png)
+实现
+```
+let babel = require('@babel/core');
+let t = require('babel-types');
+const code = `const sum = (a,b)=>a+b`;
+// path.node  父节点
+// path.parentPath 父路径
+let transformArrowFunctions = {
+    visitor: {
+        ArrowFunctionExpression: (path, state) => {
+            let node = path.node;
+            let id = path.parent.id;
+            let params = node.params;
+            let body=t.blockStatement([
+                t.returnStatement(node.body)
+            ]);
+            let functionExpression = t.functionExpression(id,params,body,false,false);
+            path.replaceWith(functionExpression);
+        }
+    }
+}
+const result = babel.transform(code, {
+    plugins: [transformArrowFunctions]
+});
+console.log(result.code);
+```
+# 6. 预计算babel插件
+转换前
+```
+const result = 1 + 2;
+```
+![image](https://github.com/tianyuexian/webpack-ast/blob/master/3.png)
+转换后
+```
+const result = 3;
+```
+![image](https://github.com/tianyuexian/webpack-ast/blob/master/4.png)
+```
+let babel = require('@babel/core');
+let t=require('babel-types');
+let preCalculator={
+    visitor: {
+        BinaryExpression(path) {
+            let node=path.node;
+            let left=node.left;
+            let operator=node.operator;
+            let right=node.right;
+            if (!isNaN(left.value) && !isNaN(right.value)) {
+                let result=eval(left.value+operator+right.value);
+                path.replaceWith(t.numericLiteral(result));
+                if (path.parent&& path.parent.type == 'BinaryExpression') {
+                    preCalculator.visitor.BinaryExpression.call(null,path.parentPath);
+                }
+            }
+        }
+    }
+}
 
+
+const result = babel.transform('const sum = 1+2+3',{
+    plugins:[
+        preCalculator
+    ]
+});
+console.log(result.code);
+```
+# 7. 把类编译为Function
+babel-plugin-transform-es2015-classes es6
+```
+class Person {
+      constructor(name) {
+          this.name=name;
+      }
+      getName() {
+          return this.name;
+      }
+  }
+```
+![image](https://github.com/tianyuexian/webpack-ast/blob/master/5.png)
+es5
+```
+function Person(name) {
+    this.name=name;
+}
+Person.prototype.getName=function () {
+    return this.name;
+}
+```
+![image](https://github.com/tianyuexian/webpack-ast/blob/master/6.png)
+![image](https://github.com/tianyuexian/webpack-ast/blob/master/7.png)
+实现
+```
+let babel = require('@babel/core');
+let t=require('babel-types');
+let source=`
+    class Person {
+        constructor(name) {
+            this.name=name;
+        }
+        getName() {
+            return this.name;
+        }
+    }
+`;
+let ClassPlugin={
+    visitor: {
+        ClassDeclaration(path) {
+            let node=path.node;
+            let id=node.id;
+            let constructorFunction = t.functionDeclaration(id,[],t.blockStatement([]),false,false);
+            let methods=node.body.body;
+            let functions = [];
+            methods.forEach(method => {
+                if (method.kind == 'constructor') {
+                    constructorFunction = t.functionDeclaration(id,method.params,method.body,false,false);
+                    functions.push(constructorFunction);
+                } else {
+                    let memberObj=t.memberExpression(t.memberExpression(id,t.identifier('prototype')),method.key);
+                    let memberFunction = t.functionExpression(id,method.params,method.body,false,false);
+                    let assignment = t.assignmentExpression('=',memberObj,memberFunction);
+                    functions.push(assignment);
+                }
+            });
+            if (functions.length ==1) {
+                path.replaceWith(functions[0]);
+            } else {
+                path.replaceWithMultiple(functions);
+            }
+        }
+    }
+}
+
+
+const result = babel.transform(source,{
+    plugins:[
+        ClassPlugin
+    ]
+});
+console.log(result.code);
+```
+# 8. webpack babel插件
+```
+var babel = require("@babel/core");
+let { transform } = require("@babel/core");
+```
+## 8.1 实现按需加载
+lodashjs
+babel-core
+babel-plugin-import
+```
+import { flatten,concat } from "lodash"
+```
+![image](https://github.com/tianyuexian/webpack-ast/blob/master/8.png)
+转换为
+```
+import flatten from "lodash/flatten";
+import concat from "lodash/flatten";
+```
+![image](https://github.com/tianyuexian/webpack-ast/blob/master/9.png)
+## 8.2 webpack配置
+```
+cnpm i webpack webpack-cli -D
+```
+```
+const path=require('path');
+module.exports={
+    mode:'development',
+    entry: './src/index.js',
+    output: {
+        path: path.resolve('dist'),
+        filename:'bundle.js'
+    },
+    module: {
+        rules: [
+            {
+                test: /\.js$/,
+                use: {
+                    loader: 'babel-loader',
+                    options: {
+                        plugins:[['import',{library:'lodash'}]]
+                    }
+                }
+            }
+        ]
+    }
+}
+```
+    编译顺序为首先plugins从左往右,然后presets从右往左
+    
+## 8.3 babel插件
+    babel-plugin-import.js放置在node_modules目录下
+```
+let babel = require('@babel/core');
+let types = require('babel-types');
+const visitor = {
+    ImportDeclaration:{
+        enter(path,state={opts}){
+            const specifiers = path.node.specifiers;
+            const source = path.node.source;
+            if(state.opts.library == source.value && !types.isImportDefaultSpecifier(specifiers[0])){
+                const declarations = specifiers.map((specifier,index)=>{
+                    return types.ImportDeclaration(
+                        [types.importDefaultSpecifier(specifier.local)],
+                        types.stringLiteral(`${source.value}/${specifier.local.name}`)
+                    )
+                });
+                path.replaceWithMultiple(declarations);
+            }
+        }
+    }
+}
+module.exports = function(babel){
+    return {
+        visitor
+    }
+}
+```
